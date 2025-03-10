@@ -180,8 +180,10 @@ class _LayerInteractionHelperWidgetState
           fit: StackFit.passthrough,
           alignment: Alignment.center,
           children: [
-            layerInteraction.widgets.border
-                    ?.call(widget.child, widget.layerData) ??
+            layerInteraction.widgets.border?.call(
+                  widget.child,
+                  widget.layerData,
+                ) ??
                 Container(
                   margin: EdgeInsets.all(
                     layerInteraction.style.buttonRadius +
@@ -217,25 +219,30 @@ class _LayerInteractionHelperWidgetState
   }
 
   List<LayerInteractionItem> _buildDefaultInteractions() {
-    bool isLayerEditable = widget.layerData.interaction.enableEdit &&
-            widget.layerData.runtimeType == TextLayer ||
-        (widget.layerData.runtimeType == WidgetLayer &&
-            widget.callbacks.stickerEditorCallbacks?.onTapEditSticker != null);
+    bool isLayerEditable =
+        widget.layerData.interaction.enableEdit &&
+        (widget.layerData.runtimeType == TextLayer ||
+            // Added condition for image layers
+            (widget.layerData.runtimeType == WidgetLayer &&
+                (widget.callbacks.stickerEditorCallbacks?.onTapEditSticker !=
+                        null ||
+                    (widget.layerData is WidgetLayer &&
+                        (widget.layerData as WidgetLayer).widget is Image))));
 
     return [
       if (isLayerEditable)
         (rebuildStream, layer, interactions) => ReactiveWidget(
-              stream: rebuildStream,
-              builder: (_) => _buildEditButton(interactions),
-            ),
+          stream: rebuildStream,
+          builder: (_) => _buildEditButton(interactions),
+        ),
       (rebuildStream, layer, interactions) => ReactiveWidget(
-            stream: rebuildStream,
-            builder: (_) => _buildRemoveButton(interactions),
-          ),
+        stream: rebuildStream,
+        builder: (_) => _buildRemoveButton(interactions),
+      ),
       (rebuildStream, layer, interactions) => ReactiveWidget(
-            stream: rebuildStream,
-            builder: (_) => _buildRotateScaleIcon(interactions),
-          ),
+        stream: rebuildStream,
+        builder: (_) => _buildRotateScaleIcon(interactions),
+      ),
     ];
   }
 

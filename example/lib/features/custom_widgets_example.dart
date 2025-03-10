@@ -1,15 +1,30 @@
 // Dart imports:
+import 'dart:async';
 import 'dart:math';
 
 // Flutter imports:
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:flutter/rendering.dart' hide Layer;
+import 'dart:ui' as ui;
 
 // Package imports:
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:pro_image_editor/shared/widgets/layer/interaction_helper/layer_interaction_button.dart';
+import 'package:pro_image_editor/features/filter_editor/types/filter_matrix.dart';
+import 'package:pro_image_editor/features/filter_editor/widgets/filtered_image.dart';
+import 'package:pro_image_editor/shared/widgets/transform/transformed_content_generator.dart';
+import 'package:pro_image_editor/features/crop_rotate_editor/models/transform_factors.dart';
 
 // Project imports:
+import '/core/constants/example_constants.dart';
 import '/core/mixin/example_helper.dart';
+import '/shared/widgets/material_icon_button.dart';
 
 /// A widget that demonstrates a custom app bar and bottom bar layout.
 ///
@@ -43,6 +58,12 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
   late ScrollController _bottomBarScrollCtrl;
   late ScrollController _paintBottomBarScrollCtrl;
   late ScrollController _cropBottomBarScrollCtrl;
+
+  // Add a key for the selected layer
+  Layer? _selectedLayer;
+
+  // Map to store the latest image data for each layer
+  final Map<String, Uint8List> _layerImageData = {};
 
   final List<TextStyle> _customTextStyles = [
     GoogleFonts.roboto(),
@@ -90,7 +111,9 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
 
   final String _url = 'https://picsum.photos/id/237/2000';
 
-  final _layerInteractionButtonRadius = 10.0;
+  final _layerInteractionButtonRadius = 15.0;
+
+  final double _initScale = 10; // Added for image scaling
 
   @override
   void initState() {
@@ -109,6 +132,649 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
     super.dispose();
   }
 
+  void _openPicker(ImageSource source) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: source);
+
+    if (image == null) return;
+
+    Uint8List? bytes;
+
+    bytes = await image.readAsBytes();
+
+    if (!mounted) return;
+    await precacheImage(MemoryImage(bytes), context);
+    var decodedImage = await decodeImageFromList(bytes);
+
+    if (!mounted) return;
+    if (kIsWeb ||
+        (!Platform.isWindows && !Platform.isLinux && !Platform.isMacOS)) {
+      Navigator.pop(context);
+    }
+
+    // Create a simple Image widget without GestureDetector or MouseRegion
+    final imageWidget = Image.memory(
+      bytes,
+      width: decodedImage.width.toDouble(),
+      height: decodedImage.height.toDouble(),
+      fit: BoxFit.cover,
+    );
+
+    // Add the layer to the editor
+    final newLayer = WidgetLayer(
+      offset: Offset.zero,
+      scale: _initScale * 0.5,
+      widget: imageWidget,
+    );
+
+    editorKey.currentState!.addLayer(newLayer);
+
+    // Store the image data for future edits
+    _layerImageData[newLayer.id] = bytes;
+
+    // Set this as the selected layer
+    setState(() {
+      _selectedLayer = newLayer;
+    });
+  }
+
+  void _chooseCameraOrGallery() async {
+    /// Open directly the gallery if the camera is not supported
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      _openPicker(ImageSource.gallery);
+      return;
+    }
+
+    if (!kIsWeb && Platform.isIOS) {
+      await showCupertinoModalPopup(
+        context: context,
+        builder: (BuildContext context) => CupertinoTheme(
+          data: const CupertinoThemeData(),
+          child: CupertinoActionSheet(
+            actions: <CupertinoActionSheetAction>[
+              CupertinoActionSheetAction(
+                onPressed: () => _openPicker(ImageSource.camera),
+                child: const Wrap(
+                  spacing: 7,
+                  runAlignment: WrapAlignment.center,
+                  children: [
+                    Icon(CupertinoIcons.photo_camera),
+                    Text('Camera'),
+                  ],
+                ),
+              ),
+              CupertinoActionSheetAction(
+                onPressed: () => _openPicker(ImageSource.gallery),
+                child: const Wrap(
+                  spacing: 7,
+                  runAlignment: WrapAlignment.center,
+                  children: [
+                    Icon(CupertinoIcons.photo),
+                    Text('Gallery'),
+                  ],
+                ),
+              ),
+            ],
+            cancelButton: CupertinoActionSheetAction(
+              isDefaultAction: true,
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+          ),
+        ),
+      );
+    } else {
+      await showModalBottomSheet(
+        context: context,
+        showDragHandle: true,
+        constraints: BoxConstraints(
+          minWidth: min(MediaQuery.sizeOf(context).width, 360),
+        ),
+        builder: (context) {
+          return Material(
+            color: Colors.transparent,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
+                child: Wrap(
+                  spacing: 45,
+                  runSpacing: 30,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runAlignment: WrapAlignment.center,
+                  alignment: WrapAlignment.spaceAround,
+                  children: [
+                    MaterialIconActionButton(
+                      primaryColor: const Color(0xFFEC407A),
+                      secondaryColor: const Color(0xFFD3396D),
+                      icon: Icons.photo_camera,
+                      text: 'Camera',
+                      onTap: () => _openPicker(ImageSource.camera),
+                    ),
+                    MaterialIconActionButton(
+                      primaryColor: const Color(0xFFBF59CF),
+                      secondaryColor: const Color(0xFFAC44CF),
+                      icon: Icons.image,
+                      text: 'Gallery',
+                      onTap: () => _openPicker(ImageSource.gallery),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
+  }
+
+  // Method to capture a rendered widget as an image - optimized version
+  Future<Uint8List?> captureWidgetAsImage(Widget widget, Size size) async {
+    try {
+      // Create a GlobalKey for the RepaintBoundary
+      final GlobalKey repaintBoundaryKey = GlobalKey();
+
+      // Create a temporary widget with RepaintBoundary
+      final tempWidget = RepaintBoundary(
+        key: repaintBoundaryKey,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: widget,
+        ),
+      );
+
+      // Create a BuildContext for the widget
+      final BuildContext? context = editorKey.currentContext;
+      if (context == null) return null;
+
+      // Create an overlay entry to render the widget
+      final overlayEntry = OverlayEntry(
+        builder: (context) => Positioned(
+          left: 0,
+          top: 0,
+          child: Opacity(
+            opacity: 0.01, // Nearly invisible but still rendered
+            child: tempWidget,
+          ),
+        ),
+      );
+
+      // Add the overlay entry to render the widget
+      Overlay.of(context).insert(overlayEntry);
+
+      // Wait for the widget to be rendered
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      // Capture the image
+      final RenderRepaintBoundary? boundary = repaintBoundaryKey.currentContext
+          ?.findRenderObject() as RenderRepaintBoundary?;
+
+      if (boundary == null) {
+        overlayEntry.remove();
+        return null;
+      }
+
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.0);
+      final ByteData? byteData =
+          await image.toByteData(format: ui.ImageByteFormat.png);
+
+      // Remove the overlay entry
+      overlayEntry.remove();
+
+      if (byteData != null) {
+        return byteData.buffer.asUint8List();
+      }
+    } catch (e) {
+      print('Error capturing widget as image: $e');
+    }
+    return null;
+  }
+
+  // Method to open crop editor for the selected layer
+  Future<void> _openCropEditorForLayer(ProImageEditorState editor) async {
+    if (_selectedLayer == null || _selectedLayer is! WidgetLayer) {
+      return;
+    }
+
+    Navigator.pop(context); // Close the bottom sheet
+
+    final widgetLayer = _selectedLayer as WidgetLayer;
+    Widget layerWidget = widgetLayer.widget;
+
+    // Extract the image data - handle both direct Image widgets and wrapped transformed images
+    Uint8List? imageData;
+
+    // Check if we have stored image data for this layer
+    if (_layerImageData.containsKey(_selectedLayer!.id)) {
+      // Use the stored image data
+      imageData = _layerImageData[_selectedLayer!.id];
+    } else if (layerWidget is Image) {
+      final image = layerWidget;
+
+      if (image.image is MemoryImage) {
+        // Direct memory image
+        imageData = (image.image as MemoryImage).bytes;
+      } else if (image.frameBuilder != null) {
+        // This might be our wrapped image with a transformed content
+        // Try to extract the original image data from the frameBuilder
+        try {
+          // The original image data is stored in the Image.memory constructor
+          imageData = (image.image as MemoryImage).bytes;
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cannot extract image data')),
+          );
+          return;
+        }
+      }
+    }
+
+    if (imageData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot edit this image')),
+      );
+      return;
+    }
+
+    // Precache the image
+    await precacheImage(MemoryImage(imageData), context);
+    if (!mounted) return;
+
+    // Show loading indicator
+    final loadingOverlay = OverlayEntry(
+      builder: (context) => Container(
+        color: Colors.black.withOpacity(0.5),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
+
+    // Open the crop editor
+    final result = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (context) => CropRotateEditor.memory(
+          imageData!,
+          initConfigs: CropRotateEditorInitConfigs(
+            theme: Theme.of(context),
+            convertToUint8List: false, // Set to false to get TransformConfigs
+            configs: ProImageEditorConfigs(
+              designMode: platformDesignMode,
+            ),
+            onImageEditingStarted: onImageEditingStarted,
+            onImageEditingComplete: onImageEditingComplete,
+            onCloseEditor: onCloseEditor,
+          ),
+        ),
+      ),
+    );
+
+    // Handle the result
+    if (result != null && mounted) {
+      // Show loading indicator while processing
+      Overlay.of(context).insert(loadingOverlay);
+
+      try {
+        // When convertToUint8List is false, we get TransformConfigs instead of Uint8List
+        if (result is TransformConfigs) {
+          // Create an EditorImage from the memory image
+          final editorImage = EditorImage(byteArray: imageData);
+
+          // Get the image dimensions
+          var decodedImage = await decodeImageFromList(imageData);
+          final imageSize = Size(
+              decodedImage.width.toDouble(), decodedImage.height.toDouble());
+
+          // Create a transformed image widget
+          final transformedImageWidget = TransformedContentGenerator(
+            transformConfigs: result,
+            configs: ProImageEditorConfigs(designMode: platformDesignMode),
+            child: FilteredImage(
+              width: imageSize.width,
+              height: imageSize.height,
+              configs: ProImageEditorConfigs(designMode: platformDesignMode),
+              image: editorImage,
+              filters: [], // No filters
+              tuneAdjustments: [], // No tune adjustments
+              blurFactor: 0, // No blur
+              fit: BoxFit.cover,
+            ),
+          );
+
+          // Capture the transformed image as Uint8List for future edits
+          final capturedImage =
+              await captureWidgetAsImage(transformedImageWidget, imageSize);
+
+          if (capturedImage != null) {
+            // Store the captured image data for future edits
+            _layerImageData[_selectedLayer!.id] = capturedImage;
+
+            // Create a simple Image widget that wraps the transformed content
+            final wrappedImage = Image.memory(
+              capturedImage,
+              width: imageSize.width,
+              height: imageSize.height,
+              fit: BoxFit.cover,
+            );
+
+            // Find the index of the selected layer
+            final index = editor.activeLayers
+                .indexWhere((layer) => layer.id == _selectedLayer!.id);
+
+            if (index != -1) {
+              // Replace the layer with the transformed image
+              editor.replaceLayer(
+                index: index,
+                layer: WidgetLayer(
+                  offset: widgetLayer.offset,
+                  scale: widgetLayer.scale,
+                  rotation: widgetLayer.rotation,
+                  widget: wrappedImage,
+                ),
+              );
+
+              setState(() {
+                _selectedLayer = editor.activeLayers[index];
+              });
+            }
+          }
+        } else if (result is Uint8List) {
+          // This case handles if somehow we still get a Uint8List
+          // Store the edited image data for future edits
+          _layerImageData[_selectedLayer!.id] = result;
+
+          // Get the image dimensions
+          var decodedImage = await decodeImageFromList(result);
+          final imageSize = Size(
+              decodedImage.width.toDouble(), decodedImage.height.toDouble());
+
+          // Create a new image widget with the edited image
+          final editedImage = Image.memory(
+            result,
+            width: imageSize.width,
+            height: imageSize.height,
+            fit: BoxFit.cover,
+          );
+
+          // Find the index of the selected layer
+          final index = editor.activeLayers
+              .indexWhere((layer) => layer.id == _selectedLayer!.id);
+
+          if (index != -1) {
+            // Replace the layer with the edited image
+            editor.replaceLayer(
+              index: index,
+              layer: WidgetLayer(
+                offset: widgetLayer.offset,
+                scale: widgetLayer.scale,
+                rotation: widgetLayer.rotation,
+                widget: editedImage,
+              ),
+            );
+
+            setState(() {
+              _selectedLayer = editor.activeLayers[index];
+            });
+          }
+        }
+      } finally {
+        // Remove loading indicator
+        loadingOverlay.remove();
+      }
+    }
+  }
+
+  // Method to open filter editor for the selected layer
+  Future<void> _openFilterEditorForLayer(ProImageEditorState editor) async {
+    if (_selectedLayer == null || _selectedLayer is! WidgetLayer) {
+      return;
+    }
+
+    Navigator.pop(context); // Close the bottom sheet
+
+    final widgetLayer = _selectedLayer as WidgetLayer;
+    Widget layerWidget = widgetLayer.widget;
+
+    // Extract the image data - handle both direct Image widgets and wrapped transformed images
+    Uint8List? imageData;
+
+    // Check if we have stored image data for this layer
+    if (_layerImageData.containsKey(_selectedLayer!.id)) {
+      // Use the stored image data
+      imageData = _layerImageData[_selectedLayer!.id];
+    } else if (layerWidget is Image) {
+      final image = layerWidget;
+
+      if (image.image is MemoryImage) {
+        // Direct memory image
+        imageData = (image.image as MemoryImage).bytes;
+      } else if (image.frameBuilder != null) {
+        // This might be our wrapped image with a transformed content
+        // Try to extract the original image data from the frameBuilder
+        try {
+          // The original image data is stored in the Image.memory constructor
+          imageData = (image.image as MemoryImage).bytes;
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cannot extract image data')),
+          );
+          return;
+        }
+      }
+    }
+
+    if (imageData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot edit this image')),
+      );
+      return;
+    }
+
+    // Precache the image
+    await precacheImage(MemoryImage(imageData), context);
+    if (!mounted) return;
+
+    // Show loading indicator
+    final loadingOverlay = OverlayEntry(
+      builder: (context) => Container(
+        color: Colors.black.withOpacity(0.5),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
+
+    // Open the filter editor
+    final result = await Navigator.of(context).push<dynamic>(
+      MaterialPageRoute(
+        builder: (context) => FilterEditor.memory(
+          imageData!,
+          initConfigs: FilterEditorInitConfigs(
+            theme: Theme.of(context),
+            convertToUint8List: false, // Set to false to get FilterMatrix
+            configs: ProImageEditorConfigs(
+              designMode: platformDesignMode,
+            ),
+            onImageEditingStarted: onImageEditingStarted,
+            onImageEditingComplete: onImageEditingComplete,
+            onCloseEditor: onCloseEditor,
+          ),
+        ),
+      ),
+    );
+
+    // Handle the result
+    if (result != null && mounted) {
+      // Show loading indicator while processing
+      Overlay.of(context).insert(loadingOverlay);
+
+      try {
+        // When convertToUint8List is false, we get FilterMatrix instead of Uint8List
+        if (result is FilterMatrix) {
+          // Create an EditorImage from the memory image
+          final editorImage = EditorImage(byteArray: imageData);
+
+          // Get the image dimensions
+          var decodedImage = await decodeImageFromList(imageData);
+          final imageSize = Size(
+              decodedImage.width.toDouble(), decodedImage.height.toDouble());
+
+          // Create a filtered image widget
+          final filteredImageWidget = FilteredImage(
+            image: editorImage,
+            filters: result,
+            width: imageSize.width,
+            height: imageSize.height,
+            configs: ProImageEditorConfigs(designMode: platformDesignMode),
+            tuneAdjustments: [], // No tune adjustments
+            blurFactor: 0, // No blur
+            fit: BoxFit.cover,
+          );
+
+          // Capture the filtered image as Uint8List for future edits
+          final capturedImage =
+              await captureWidgetAsImage(filteredImageWidget, imageSize);
+
+          if (capturedImage != null) {
+            // Store the captured image data for future edits
+            _layerImageData[_selectedLayer!.id] = capturedImage;
+
+            // Create a simple Image widget with the filtered content
+            final wrappedImage = Image.memory(
+              capturedImage,
+              width: imageSize.width,
+              height: imageSize.height,
+              fit: BoxFit.cover,
+            );
+
+            // Find the index of the selected layer
+            final index = editor.activeLayers
+                .indexWhere((layer) => layer.id == _selectedLayer!.id);
+
+            if (index != -1) {
+              // Replace the layer with the filtered image
+              editor.replaceLayer(
+                index: index,
+                layer: WidgetLayer(
+                  offset: widgetLayer.offset,
+                  scale: widgetLayer.scale,
+                  rotation: widgetLayer.rotation,
+                  widget: wrappedImage,
+                ),
+              );
+
+              setState(() {
+                _selectedLayer = editor.activeLayers[index];
+              });
+            }
+          }
+        } else if (result is Uint8List) {
+          // This case handles if somehow we still get a Uint8List
+          // Store the edited image data for future edits
+          _layerImageData[_selectedLayer!.id] = result;
+
+          // Get the image dimensions
+          var decodedImage = await decodeImageFromList(result);
+          final imageSize = Size(
+              decodedImage.width.toDouble(), decodedImage.height.toDouble());
+
+          // Create a new image widget with the edited image
+          final editedImage = Image.memory(
+            result,
+            width: imageSize.width,
+            height: imageSize.height,
+            fit: BoxFit.cover,
+          );
+
+          // Find the index of the selected layer
+          final index = editor.activeLayers
+              .indexWhere((layer) => layer.id == _selectedLayer!.id);
+
+          if (index != -1) {
+            // Replace the layer with the edited image
+            editor.replaceLayer(
+              index: index,
+              layer: WidgetLayer(
+                offset: widgetLayer.offset,
+                scale: widgetLayer.scale,
+                rotation: widgetLayer.rotation,
+                widget: editedImage,
+              ),
+            );
+
+            setState(() {
+              _selectedLayer = editor.activeLayers[index];
+            });
+          }
+        }
+      } finally {
+        // Remove loading indicator
+        loadingOverlay.remove();
+      }
+    }
+  }
+
+  void _editSelectedImageLayer(ProImageEditorState editor) {
+    if (_selectedLayer == null || _selectedLayer is! WidgetLayer) {
+      return;
+    }
+
+    final widgetLayer = _selectedLayer as WidgetLayer;
+    Widget layerWidget = widgetLayer.widget;
+
+    // Simplify the image layer detection
+    bool isImageLayer = layerWidget is Image;
+
+    if (!isImageLayer) {
+      return;
+    }
+
+    // Show a bottom sheet with editing options
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      constraints: BoxConstraints(
+        minWidth: min(MediaQuery.sizeOf(context).width, 360),
+      ),
+      builder: (context) {
+        return Material(
+          color: Colors.transparent,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24, left: 16, right: 16),
+              child: Wrap(
+                spacing: 45,
+                runSpacing: 30,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runAlignment: WrapAlignment.center,
+                alignment: WrapAlignment.spaceAround,
+                children: [
+                  MaterialIconActionButton(
+                    primaryColor: const Color(0xFF42A5F5),
+                    secondaryColor: const Color(0xFF1976D2),
+                    icon: Icons.crop,
+                    text: 'Crop',
+                    onTap: () => _openCropEditorForLayer(editor),
+                  ),
+                  MaterialIconActionButton(
+                    primaryColor: const Color(0xFF66BB6A),
+                    secondaryColor: const Color(0xFF388E3C),
+                    icon: Icons.filter,
+                    text: 'Filter',
+                    onTap: () => _openFilterEditorForLayer(editor),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!isPreCached) return const PrepareImageWidget();
@@ -122,6 +788,21 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
           onImageEditingComplete: onImageEditingComplete,
           onCloseEditor: () =>
               onCloseEditor(enablePop: !isDesktopMode(context)),
+          // Add a callback to handle layer selection
+          mainEditorCallbacks: MainEditorCallbacks(
+            onAddLayer: (Layer layer) {
+              // This will be called when a layer is added
+              setState(() {
+                _selectedLayer = layer;
+              });
+            },
+            onUpdateLayer: (Layer layer) {
+              // This will be called when a layer is updated
+              setState(() {
+                _selectedLayer = layer;
+              });
+            },
+          ),
         ),
         configs: ProImageEditorConfigs(
           designMode: platformDesignMode,
@@ -197,8 +878,24 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
             ),
           ),
           layerInteraction: LayerInteractionConfigs(
+            selectable: LayerInteractionSelectable.enabled,
+            initialSelected: true,
+            style: LayerInteractionStyle(
+              buttonRadius: _layerInteractionButtonRadius,
+              strokeWidth: 2.0,
+              borderElementWidth: 10,
+              borderElementSpace: 5,
+              borderColor: Colors.blue,
+              removeCursor: SystemMouseCursors.click,
+              rotateScaleCursor: SystemMouseCursors.click,
+              editCursor: SystemMouseCursors.click,
+              hoverCursor: SystemMouseCursors.move,
+              borderStyle: LayerInteractionBorderStyle.solid,
+              showTooltips: true,
+            ),
             widgets: LayerInteractionWidgets(
               editButton: (rebuildStream, onTap, rotation) => ReactiveWidget(
+                stream: rebuildStream,
                 builder: (_) {
                   return Positioned(
                     top: 0,
@@ -208,20 +905,43 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
                       child: MouseRegion(
                         cursor: SystemMouseCursors.click,
                         child: GestureDetector(
-                          onTap: onTap,
+                          onTap: () {
+                            // First call the original onTap handler
+                            onTap();
+
+                            // Then open our custom edit options if it's an image
+                            if (_selectedLayer is WidgetLayer &&
+                                (_selectedLayer as WidgetLayer).widget
+                                    is Image) {
+                              _editSelectedImageLayer(editorKey.currentState!);
+                            }
+                          },
                           child: Tooltip(
                             message: 'Edit',
                             child: Container(
-                              padding: const EdgeInsets.all(3),
+                              padding: const EdgeInsets.all(8),
+                              margin: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(
                                     _layerInteractionButtonRadius * 2),
-                                color: Colors.white,
+                                color: Colors.red,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.5),
+                                    spreadRadius: 3,
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 3,
+                                ),
                               ),
                               child: Icon(
                                 Icons.edit,
-                                color: Colors.black,
-                                size: _layerInteractionButtonRadius * 2,
+                                color: Colors.white,
+                                size: _layerInteractionButtonRadius * 2.5,
                               ),
                             ),
                           ),
@@ -230,7 +950,6 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
                     ),
                   );
                 },
-                stream: rebuildStream,
               ),
               removeButton: (rebuildStream, onTap, rotation) => ReactiveWidget(
                 builder: (_) {
@@ -246,15 +965,23 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
                           child: Tooltip(
                             message: 'Remove',
                             child: Container(
-                              padding: const EdgeInsets.all(3),
+                              padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(
                                     _layerInteractionButtonRadius * 2),
-                                color: Colors.white,
+                                color: Colors.red,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    spreadRadius: 1,
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
                               ),
                               child: Icon(
                                 Icons.close,
-                                color: Colors.black,
+                                color: Colors.white,
                                 size: _layerInteractionButtonRadius * 2,
                               ),
                             ),
@@ -285,15 +1012,23 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
                           child: Tooltip(
                             message: 'Rotate',
                             child: Container(
-                              padding: const EdgeInsets.all(3),
+                              padding: const EdgeInsets.all(5),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(
                                     _layerInteractionButtonRadius * 2),
-                                color: Colors.white,
+                                color: Colors.green,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    spreadRadius: 1,
+                                    blurRadius: 3,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
                               ),
                               child: Icon(
                                 Icons.rotate_90_degrees_ccw,
-                                color: Colors.black,
+                                color: Colors.white,
                                 size: _layerInteractionButtonRadius * 2,
                               ),
                             ),
@@ -652,6 +1387,15 @@ class _CustomWidgetsExampleState extends State<CustomWidgetsExample>
                         color: Colors.white,
                       ),
                       onPressed: editor.openTextEditor,
+                    ),
+                    FlatIconTextButton(
+                      label: Text('Add Image', style: _bottomTextStyle),
+                      icon: const Icon(
+                        Icons.add_photo_alternate_outlined,
+                        size: 22.0,
+                        color: Colors.white,
+                      ),
+                      onPressed: _chooseCameraOrGallery,
                     ),
                     FlatIconTextButton(
                       label: Text('My Button',
