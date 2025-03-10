@@ -19,6 +19,136 @@ import '/core/mixin/example_helper.dart';
 import '/shared/widgets/material_icon_button.dart';
 import '/shared/widgets/pixel_transparent_painter.dart';
 
+/// Frame template class to manage different frame designs
+class FrameTemplate {
+  final String name;
+  final String frameAsset;
+  final List<TextFieldConfig> textFields;
+
+  FrameTemplate({
+    required this.name,
+    required this.frameAsset,
+    required this.textFields,
+  });
+}
+
+/// Configuration for text fields in frame templates
+class TextFieldConfig {
+  final String initialText;
+  final TextStyle style;
+  final double topPosition; // Position from top as percentage (0.0 to 1.0)
+  final EdgeInsets padding;
+  final TextEditingController controller;
+
+  TextFieldConfig({
+    required this.initialText,
+    required this.style,
+    required this.topPosition,
+    this.padding = const EdgeInsets.symmetric(horizontal: 0.1),
+  }) : controller = TextEditingController(text: initialText);
+
+  void dispose() {
+    controller.dispose();
+  }
+}
+
+/// Manager for frame templates
+class FrameTemplateManager {
+  final List<FrameTemplate> templates;
+  int _currentTemplateIndex = 0;
+
+  FrameTemplateManager({required this.templates});
+
+  FrameTemplate get currentTemplate => templates[_currentTemplateIndex];
+
+  String get currentFrameAsset => currentTemplate.frameAsset;
+
+  int get currentIndex => _currentTemplateIndex;
+
+  int get templatesCount => templates.length;
+
+  void nextTemplate() {
+    _currentTemplateIndex = (_currentTemplateIndex + 1) % templates.length;
+  }
+
+  void previousTemplate() {
+    _currentTemplateIndex =
+        (_currentTemplateIndex - 1 + templates.length) % templates.length;
+  }
+
+  void selectTemplate(int index) {
+    if (index >= 0 && index < templates.length) {
+      _currentTemplateIndex = index;
+    }
+  }
+
+  void dispose() {
+    for (var template in templates) {
+      for (var textField in template.textFields) {
+        textField.dispose();
+      }
+    }
+  }
+
+  /// Build a frame with the current template
+  ReactiveWidget buildTemplateFrame(
+    Size bodySize,
+    Stream<void> rebuildStream,
+    ValueNotifier<bool> controlsVisibleNotifier,
+  ) {
+    return ReactiveWidget(
+      stream: rebuildStream,
+      builder: (_) => ValueListenableBuilder<bool>(
+        valueListenable: controlsVisibleNotifier,
+        builder: (context, isVisible, _) {
+          return Stack(
+            children: [
+              // Frame image as the base layer with opacity control
+              Opacity(
+                opacity: isVisible
+                    ? 0.6
+                    : 1.0, // Reduce opacity when controls are visible
+                child: IgnorePointer(
+                  child: Image.asset(
+                    currentFrameAsset,
+                    width: bodySize.width,
+                    height: bodySize.height,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+
+              // Text fields from the current template
+              ...currentTemplate.textFields.map((textConfig) {
+                return Positioned(
+                  top: bodySize.height * textConfig.topPosition,
+                  left: bodySize.width * textConfig.padding.left,
+                  right: bodySize.width * textConfig.padding.right,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: TextField(
+                      controller: textConfig.controller,
+                      textAlign: TextAlign.center,
+                      style: textConfig.style,
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: "Enter text",
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// The example for a frame around the images
 class FrameExample extends StatefulWidget {
   /// Creates a new [FrameExample] widget.
@@ -33,7 +163,7 @@ class _FrameExampleState extends State<FrameExample>
   late final ScrollController _bottomBarScrollCtrl;
 
   String _frameUrl = 'assets/frame.png';
-  bool _useCustomFrame = false; // Flag to track which frame is active
+  bool _useTemplateFrame = false; // Flag to track if template frame is active
 
   /// Better scale experience
   final double _initScale = 10;
@@ -46,20 +176,187 @@ class _FrameExampleState extends State<FrameExample>
   Map<String, Uint8List> _layerImageData = {};
   Layer? _selectedLayer;
 
-  // Text controllers for the custom frame text fields
-  final TextEditingController _titleController =
-      TextEditingController(text: "Happy Birthday");
-  final TextEditingController _nameController =
-      TextEditingController(text: "Avik");
-
   // Replace boolean with ValueNotifier for better reactivity
   final ValueNotifier<bool> _controlsVisibleNotifier =
       ValueNotifier<bool>(false);
+
+  // Frame template manager
+  late final FrameTemplateManager _templateManager;
 
   @override
   void initState() {
     super.initState();
     _bottomBarScrollCtrl = ScrollController();
+
+    // Initialize frame templates
+    _templateManager = FrameTemplateManager(
+      templates: [
+        // Birthday template
+        FrameTemplate(
+          name: 'Birthday',
+          frameAsset: 'assets/frame.png',
+          textFields: [
+            TextFieldConfig(
+              initialText: 'Happy Birthday',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.3,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+            TextFieldConfig(
+              initialText: 'Avik',
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.45,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+          ],
+        ),
+        // Anniversary template
+        FrameTemplate(
+          name: 'Anniversary',
+          frameAsset: 'assets/frame1.png',
+          textFields: [
+            TextFieldConfig(
+              initialText: 'Happy Anniversary',
+              style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Serif',
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.2,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+            TextFieldConfig(
+              initialText: 'John & Jane',
+              style: TextStyle(
+                fontSize: 42,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Serif',
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.35,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+            TextFieldConfig(
+              initialText: '5 Years',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Serif',
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.55,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+          ],
+        ),
+        // Greeting template
+        FrameTemplate(
+          name: 'Greeting',
+          frameAsset: 'assets/frame.png',
+          textFields: [
+            TextFieldConfig(
+              initialText: 'Hello',
+              style: TextStyle(
+                fontSize: 40,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.25,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+            TextFieldConfig(
+              initialText: 'Beautiful World',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.4,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+            TextFieldConfig(
+              initialText: '2024',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.6,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+          ],
+        ),
+      ],
+    );
+
+    // Set initial frame URL from template manager
+    _frameUrl = _templateManager.currentFrameAsset;
+
     preCacheImage(assetPath: _frameUrl);
     _createTransparentBackgroundImage();
 
@@ -73,9 +370,61 @@ class _FrameExampleState extends State<FrameExample>
   void dispose() {
     _controlsVisibleNotifier.dispose(); // Dispose the ValueNotifier
     _bottomBarScrollCtrl.dispose();
-    _titleController.dispose(); // Dispose text controllers
-    _nameController.dispose();
+    _templateManager.dispose(); // Dispose template manager
     super.dispose();
+  }
+
+  // Toggle between regular frame and template frame
+  void _toggleTemplateFrame() {
+    setState(() {
+      _useTemplateFrame = !_useTemplateFrame;
+    });
+  }
+
+  // Navigate to the next template
+  void _nextTemplate() {
+    setState(() {
+      _templateManager.nextTemplate();
+      _frameUrl = _templateManager.currentFrameAsset;
+    });
+    _updateFrameImage();
+  }
+
+  // Navigate to the previous template
+  void _previousTemplate() {
+    setState(() {
+      _templateManager.previousTemplate();
+      _frameUrl = _templateManager.currentFrameAsset;
+    });
+    _updateFrameImage();
+  }
+
+  // Update the frame image when template changes
+  Future<void> _updateFrameImage() async {
+    try {
+      // Precache the new frame image
+      await precacheImage(AssetImage(_frameUrl), context);
+
+      // Mark screenshots as broken to regenerate them
+      if (editorKey.currentState != null) {
+        for (var el in editorKey.currentState!.stateManager.screenshots) {
+          el.broken = true;
+        }
+      }
+
+      // Update the transparent background
+      await _createTransparentBackgroundImage();
+
+      // Update the editor image
+      if (editorKey.currentState != null && _transparentBytes != null) {
+        editorKey.currentState!.editorImage = EditorImage(
+          byteArray: _transparentBytes,
+        );
+        await editorKey.currentState!.decodeImage();
+      }
+    } catch (e) {
+      print('Error updating frame image: $e');
+    }
   }
 
   // Method to capture a rendered widget as an image - optimized version
@@ -667,17 +1016,11 @@ class _FrameExampleState extends State<FrameExample>
     );
   }
 
-  // Toggle between regular frame and custom frame with text
-  void _toggleCustomFrame() {
-    setState(() {
-      _useCustomFrame = !_useCustomFrame;
-    });
-  }
-
   // Return a ReactiveWidget based on the current frame mode
   ReactiveWidget _buildCurrentFrame(Size bodySize, Stream<void> rebuildStream) {
-    return _useCustomFrame
-        ? _buildCustomFrame(bodySize, rebuildStream)
+    return _useTemplateFrame
+        ? _templateManager.buildTemplateFrame(
+            bodySize, rebuildStream, _controlsVisibleNotifier)
         : _buildRegularFrame(bodySize, rebuildStream);
   }
 
@@ -706,101 +1049,6 @@ class _FrameExampleState extends State<FrameExample>
     );
   }
 
-  // Custom frame with editable text fields on top of the frame image
-  ReactiveWidget _buildCustomFrame(Size bodySize, Stream<void> rebuildStream) {
-    return ReactiveWidget(
-      stream: rebuildStream,
-      builder: (_) => ValueListenableBuilder<bool>(
-        valueListenable: _controlsVisibleNotifier,
-        builder: (context, isVisible, _) {
-          return Stack(
-            children: [
-              // Frame image as the base layer with opacity control
-              Opacity(
-                opacity: isVisible
-                    ? 0.6
-                    : 1.0, // Reduce opacity when controls are visible
-                child: IgnorePointer(
-                  child: Image.asset(
-                    _frameUrl,
-                    width: bodySize.width,
-                    height: bodySize.height,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-
-              // Editable text fields on top of the frame - these should always be fully visible
-              Positioned(
-                top: bodySize.height * 0.3, // Position at 30% from the top
-                left: bodySize.width * 0.1,
-                right: bodySize.width * 0.1,
-                child: Material(
-                  color: Colors.transparent,
-                  child: TextField(
-                    controller: _titleController,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(2.0, 2.0),
-                          blurRadius: 3.0,
-                          color: Colors.black.withOpacity(0.5),
-                        ),
-                      ],
-                    ),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: "Enter title",
-                      hintStyle: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              Positioned(
-                top: bodySize.height * 0.45, // Position at 45% from the top
-                left: bodySize.width * 0.1,
-                right: bodySize.width * 0.1,
-                child: Material(
-                  color: Colors.transparent,
-                  child: TextField(
-                    controller: _nameController,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 48,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          offset: Offset(2.0, 2.0),
-                          blurRadius: 3.0,
-                          color: Colors.black.withOpacity(0.5),
-                        ),
-                      ],
-                    ),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      hintText: "Enter name",
-                      hintStyle: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildBottomBar(
     ProImageEditorState editor,
     BoxConstraints constraints,
@@ -821,12 +1069,11 @@ class _FrameExampleState extends State<FrameExample>
             child: ConstrainedBox(
               constraints: BoxConstraints(
                 minWidth: min(constraints.maxWidth,
-                    600), // Increased width to accommodate more buttons
-                maxWidth: 600, // Increased width to accommodate more buttons
+                    700), // Increased width for more buttons
+                maxWidth: 700, // Increased width for more buttons
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8.0), // Reduced padding
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   mainAxisSize: MainAxisSize.min,
@@ -841,14 +1088,53 @@ class _FrameExampleState extends State<FrameExample>
                       onPressed: _toggleFrame,
                     ),
                     FlatIconTextButton(
-                      label: Text('Text Frame', style: _bottomTextStyle),
-                      icon: const Icon(
-                        Icons.title,
+                      label: Text(
+                          _useTemplateFrame ? 'Plain Frame' : 'Template',
+                          style: _bottomTextStyle),
+                      icon: Icon(
+                        _useTemplateFrame ? Icons.image : Icons.text_fields,
                         size: 22.0,
                         color: Colors.white,
                       ),
-                      onPressed: _toggleCustomFrame,
+                      onPressed: _toggleTemplateFrame,
                     ),
+                    if (_useTemplateFrame) ...[
+                      FlatIconTextButton(
+                        label: Text('Previous', style: _bottomTextStyle),
+                        icon: const Icon(
+                          Icons.arrow_back_ios,
+                          size: 22.0,
+                          color: Colors.white,
+                        ),
+                        onPressed: _previousTemplate,
+                      ),
+                      // Template indicator
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade700,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${_templateManager.currentTemplate.name} (${_templateManager.currentIndex + 1}/${_templateManager.templatesCount})',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      FlatIconTextButton(
+                        label: Text('Next', style: _bottomTextStyle),
+                        icon: const Icon(
+                          Icons.arrow_forward_ios,
+                          size: 22.0,
+                          color: Colors.white,
+                        ),
+                        onPressed: _nextTemplate,
+                      ),
+                    ],
                     const VerticalDivider(width: 2),
                     FlatIconTextButton(
                       label: Text('Image', style: _bottomTextStyle),
