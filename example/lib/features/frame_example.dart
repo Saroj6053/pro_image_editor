@@ -33,6 +33,7 @@ class _FrameExampleState extends State<FrameExample>
   late final ScrollController _bottomBarScrollCtrl;
 
   String _frameUrl = 'assets/frame.png';
+  bool _useCustomFrame = false; // Flag to track which frame is active
 
   /// Better scale experience
   final double _initScale = 10;
@@ -44,6 +45,12 @@ class _FrameExampleState extends State<FrameExample>
 
   Map<String, Uint8List> _layerImageData = {};
   Layer? _selectedLayer;
+
+  // Text controllers for the custom frame text fields
+  final TextEditingController _titleController =
+      TextEditingController(text: "Happy Birthday");
+  final TextEditingController _nameController =
+      TextEditingController(text: "Avik");
 
   // Replace boolean with ValueNotifier for better reactivity
   final ValueNotifier<bool> _controlsVisibleNotifier =
@@ -66,6 +73,8 @@ class _FrameExampleState extends State<FrameExample>
   void dispose() {
     _controlsVisibleNotifier.dispose(); // Dispose the ValueNotifier
     _bottomBarScrollCtrl.dispose();
+    _titleController.dispose(); // Dispose text controllers
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -580,7 +589,7 @@ class _FrameExampleState extends State<FrameExample>
             enableCloseButton: !isDesktopMode(context),
             widgets: MainEditorWidgets(
               bodyItemsRecorded: (editor, rebuildStream) => [
-                _buildFrame(editor.sizesManager.bodySize, rebuildStream),
+                _buildCurrentFrame(editor.sizesManager.bodySize, rebuildStream),
               ],
               bottomBar: (editor, rebuildStream, key) => ReactiveWidget(
                 stream: rebuildStream,
@@ -600,7 +609,7 @@ class _FrameExampleState extends State<FrameExample>
           paintEditor: PaintEditorConfigs(
             widgets: PaintEditorWidgets(
               bodyItemsRecorded: (editor, rebuildStream) => [
-                _buildFrame(editor.editorBodySize, rebuildStream),
+                _buildCurrentFrame(editor.editorBodySize, rebuildStream),
               ],
             ),
             style: const PaintEditorStyle(
@@ -625,7 +634,7 @@ class _FrameExampleState extends State<FrameExample>
             style: const FilterEditorStyle(),
             widgets: FilterEditorWidgets(
               bodyItemsRecorded: (editor, rebuildStream) => [
-                _buildFrame(editor.editorBodySize, rebuildStream),
+                _buildCurrentFrame(editor.editorBodySize, rebuildStream),
               ],
             ),
           ),
@@ -658,8 +667,22 @@ class _FrameExampleState extends State<FrameExample>
     );
   }
 
-  // Return a ReactiveWidget directly to match the expected type in bodyItemsRecorded lists
-  ReactiveWidget _buildFrame(Size bodySize, Stream<void> rebuildStream) {
+  // Toggle between regular frame and custom frame with text
+  void _toggleCustomFrame() {
+    setState(() {
+      _useCustomFrame = !_useCustomFrame;
+    });
+  }
+
+  // Return a ReactiveWidget based on the current frame mode
+  ReactiveWidget _buildCurrentFrame(Size bodySize, Stream<void> rebuildStream) {
+    return _useCustomFrame
+        ? _buildCustomFrame(bodySize, rebuildStream)
+        : _buildRegularFrame(bodySize, rebuildStream);
+  }
+
+  // Regular frame without text
+  ReactiveWidget _buildRegularFrame(Size bodySize, Stream<void> rebuildStream) {
     return ReactiveWidget(
       stream: rebuildStream,
       builder: (_) => ValueListenableBuilder<bool>(
@@ -677,6 +700,101 @@ class _FrameExampleState extends State<FrameExample>
                 fit: BoxFit.contain,
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Custom frame with editable text fields on top of the frame image
+  ReactiveWidget _buildCustomFrame(Size bodySize, Stream<void> rebuildStream) {
+    return ReactiveWidget(
+      stream: rebuildStream,
+      builder: (_) => ValueListenableBuilder<bool>(
+        valueListenable: _controlsVisibleNotifier,
+        builder: (context, isVisible, _) {
+          return Stack(
+            children: [
+              // Frame image as the base layer with opacity control
+              Opacity(
+                opacity: isVisible
+                    ? 0.6
+                    : 1.0, // Reduce opacity when controls are visible
+                child: IgnorePointer(
+                  child: Image.asset(
+                    _frameUrl,
+                    width: bodySize.width,
+                    height: bodySize.height,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+
+              // Editable text fields on top of the frame - these should always be fully visible
+              Positioned(
+                top: bodySize.height * 0.3, // Position at 30% from the top
+                left: bodySize.width * 0.1,
+                right: bodySize.width * 0.1,
+                child: Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    controller: _titleController,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(2.0, 2.0),
+                          blurRadius: 3.0,
+                          color: Colors.black.withOpacity(0.5),
+                        ),
+                      ],
+                    ),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      hintText: "Enter title",
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              Positioned(
+                top: bodySize.height * 0.45, // Position at 45% from the top
+                left: bodySize.width * 0.1,
+                right: bodySize.width * 0.1,
+                child: Material(
+                  color: Colors.transparent,
+                  child: TextField(
+                    controller: _nameController,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(2.0, 2.0),
+                          blurRadius: 3.0,
+                          color: Colors.black.withOpacity(0.5),
+                        ),
+                      ],
+                    ),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      hintText: "Enter name",
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -702,17 +820,19 @@ class _FrameExampleState extends State<FrameExample>
             scrollDirection: Axis.horizontal,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minWidth: min(constraints.maxWidth, 500),
-                maxWidth: 500,
+                minWidth: min(constraints.maxWidth,
+                    600), // Increased width to accommodate more buttons
+                maxWidth: 600, // Increased width to accommodate more buttons
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8.0), // Reduced padding
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     FlatIconTextButton(
-                      label: Text('Toggle Frame', style: _bottomTextStyle),
+                      label: Text('Frame', style: _bottomTextStyle),
                       icon: const Icon(
                         Icons.filter_frames_outlined,
                         size: 22.0,
@@ -720,9 +840,18 @@ class _FrameExampleState extends State<FrameExample>
                       ),
                       onPressed: _toggleFrame,
                     ),
-                    const VerticalDivider(width: 3),
                     FlatIconTextButton(
-                      label: Text('Add Image', style: _bottomTextStyle),
+                      label: Text('Text Frame', style: _bottomTextStyle),
+                      icon: const Icon(
+                        Icons.title,
+                        size: 22.0,
+                        color: Colors.white,
+                      ),
+                      onPressed: _toggleCustomFrame,
+                    ),
+                    const VerticalDivider(width: 2),
+                    FlatIconTextButton(
+                      label: Text('Image', style: _bottomTextStyle),
                       icon: const Icon(
                         Icons.image_outlined,
                         size: 22.0,
