@@ -6,6 +6,7 @@ import '/features/custom_widgets_example.dart';
 import '/features/default_example.dart';
 import '/features/design_examples/design_example.dart';
 import '/features/firebase_supabase_example.dart';
+import '/features/frame_background_example.dart';
 import '/features/frame_example.dart';
 import '/features/generation_configs_example.dart';
 import '/features/google_font_example.dart';
@@ -33,6 +34,12 @@ import '../models/example_model.dart';
 /// cropping, layering, importing/exporting, and integration with services
 /// like Firebase or Supabase.
 List<Example> kImageEditorExamples = const [
+  Example(
+    path: '/frame-background',
+    name: 'Frame Background',
+    icon: Icons.wallpaper,
+    page: FrameBackgroundExample(),
+  ),
   Example(
     path: '/default',
     name: 'Default-Editor',
