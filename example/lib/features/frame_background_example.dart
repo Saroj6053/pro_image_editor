@@ -25,6 +25,7 @@ import 'package:pro_image_editor/features/crop_rotate_editor/models/transform_fa
 import '/core/constants/example_constants.dart';
 import '/core/mixin/example_helper.dart';
 import '/shared/widgets/material_icon_button.dart';
+import '/shared/widgets/circular_image_canvas.dart';
 
 /// A widget that demonstrates a custom app bar and bottom bar layout.
 ///
@@ -65,9 +66,9 @@ class _FrameBackgroundExampleState extends State<FrameBackgroundExample>
   // Add a variable to store the circular canvas image
   Uint8List? _circularCanvasImage;
 
-  // Add these variables to manage image panning
-  Offset _circularImageOffset = Offset.zero;
-  bool _isPanningCircularImage = false;
+  // These variables are now handled in the CircularImageCanvas widget
+  // Offset _circularImageOffset = Offset.zero;
+  // bool _isPanningCircularImage = false;
 
   final List<TextStyle> _customTextStyles = [
     GoogleFonts.roboto(),
@@ -1061,87 +1062,42 @@ class _FrameBackgroundExampleState extends State<FrameBackgroundExample>
           // Circular masked canvas overlay
           Positioned.fill(
             child: Center(
-              child: Container(
-                width: constraints.maxWidth / 2,
-                height: constraints.maxWidth / 2,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: _circularCanvasImage != null
-                      ? GestureDetector(
-                          onPanStart: (_) {
-                            setState(() {
-                              _isPanningCircularImage = true;
-                            });
-                          },
-                          onPanUpdate: (details) {
-                            setState(() {
-                              _circularImageOffset += details.delta / 2;
-                              _circularImageOffset = Offset(
-                                _circularImageOffset.dx.clamp(-50.0, 50.0),
-                                _circularImageOffset.dy.clamp(-50.0, 50.0),
-                              );
-                            });
-                          },
-                          onPanEnd: (_) {
-                            setState(() {
-                              _isPanningCircularImage = false;
-                            });
-                          },
-                          child: SizedBox(
-                            width: constraints.maxWidth / 2,
-                            height: constraints.maxWidth / 2,
-                            child: Image.memory(
-                              _circularCanvasImage!,
-                              fit: BoxFit.cover,
-                              alignment: Alignment(
-                                _circularImageOffset.dx / 50,
-                                _circularImageOffset.dy / 50,
-                              ),
-                            ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
+              child: CircularImageCanvas(
+                size: constraints.maxWidth / 4,
+                imageBytes: _circularCanvasImage,
+                onImageAdd: _selectCircularImage,
+                showDebug: true,
               ),
             ),
           ),
 
-          // Add image button for circular canvas
-          Positioned.fill(
-            child: Center(
-              child: _circularCanvasImage == null
-                  ? Container(
-                      width: constraints.maxWidth / 4,
-                      height: constraints.maxWidth / 4,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black.withOpacity(0.5),
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.add_photo_alternate,
-                          color: Colors.white,
-                          size: 40,
-                        ),
-                        onPressed: _selectCircularImage,
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ),
+          // Add image button for circular canvas - Now handled by CircularImageCanvas
+          // Positioned.fill(
+          //   child: Center(
+          //     child: _circularCanvasImage == null
+          //         ? Container(
+          //             width: constraints.maxWidth / 4,
+          //             height: constraints.maxWidth / 4,
+          //             decoration: BoxDecoration(
+          //               shape: BoxShape.circle,
+          //               color: Colors.black.withOpacity(0.5),
+          //               border: Border.all(
+          //                 color: Colors.white,
+          //                 width: 2,
+          //               ),
+          //             ),
+          //             child: IconButton(
+          //               icon: const Icon(
+          //                 Icons.add_photo_alternate,
+          //                 color: Colors.white,
+          //                 size: 40,
+          //               ),
+          //               onPressed: _selectCircularImage,
+          //             ),
+          //           )
+          //         : const SizedBox.shrink(),
+          //   ),
+          // ),
         ],
       );
     });
@@ -1763,10 +1719,41 @@ class _FrameBackgroundExampleState extends State<FrameBackgroundExample>
 
     if (!mounted) return;
 
-    // Simply set the image bytes directly
-    setState(() {
-      _circularCanvasImage = bytes;
-      _circularImageOffset = Offset.zero; // Reset panning position
-    });
+    // Show loading indicator
+    final loadingOverlay = OverlayEntry(
+      builder: (context) => Container(
+        color: Colors.black.withOpacity(0.5),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(loadingOverlay);
+
+    try {
+      // Pre-cache the image to avoid rendering issues
+      await precacheImage(MemoryImage(bytes), context);
+
+      if (!mounted) {
+        loadingOverlay.remove();
+        return;
+      }
+
+      setState(() {
+        _circularCanvasImage = bytes;
+      });
+    } catch (e) {
+      print('Error loading image: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load image: $e')),
+        );
+      }
+    } finally {
+      if (loadingOverlay.mounted) {
+        loadingOverlay.remove();
+      }
+    }
   }
 }
