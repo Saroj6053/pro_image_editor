@@ -1066,6 +1066,7 @@ class _FrameBackgroundExampleState extends State<FrameBackgroundExample>
                 size: constraints.maxWidth / 4,
                 imageBytes: _circularCanvasImage,
                 onImageAdd: _selectCircularImage,
+                onImageUpdated: _updateCircularImage,
                 showDebug: true,
               ),
             ),
@@ -1720,25 +1721,14 @@ class _FrameBackgroundExampleState extends State<FrameBackgroundExample>
     if (!mounted) return;
 
     // Show loading indicator
-    final loadingOverlay = OverlayEntry(
-      builder: (context) => Container(
-        color: Colors.black.withOpacity(0.5),
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      ),
-    );
-
-    Overlay.of(context).insert(loadingOverlay);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Loading image...'), duration: Duration(seconds: 1)));
 
     try {
       // Pre-cache the image to avoid rendering issues
       await precacheImage(MemoryImage(bytes), context);
 
-      if (!mounted) {
-        loadingOverlay.remove();
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _circularCanvasImage = bytes;
@@ -1750,10 +1740,20 @@ class _FrameBackgroundExampleState extends State<FrameBackgroundExample>
           SnackBar(content: Text('Failed to load image: $e')),
         );
       }
-    } finally {
-      if (loadingOverlay.mounted) {
-        loadingOverlay.remove();
-      }
     }
+  }
+
+  void _updateCircularImage(Uint8List imageBytes) {
+    print(
+        "Updating circular image with new data of size: ${imageBytes.length} bytes");
+
+    // Show a brief loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Applying changes...'), duration: Duration(seconds: 1)));
+
+    // Update the state with the new image data
+    setState(() {
+      _circularCanvasImage = imageBytes;
+    });
   }
 }
