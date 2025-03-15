@@ -1098,12 +1098,11 @@ class _FrameExampleState extends State<FrameExample>
       _transparentBytes!,
       key: editorKey,
       callbacks: ProImageEditorCallbacks(
-        onImageEditingStarted: onImageEditingStarted,
-        onImageEditingComplete: (bytes) async {
+        onImageEditingStarted: () {
           // Set capturing flag to true to hide UI elements during capture
           _isCapturingResult.value = true;
 
-          // Deselect all text fields when saving the image
+          // First deselect all text fields when saving the image
           if (_useTemplateFrame) {
             _deselectAllTextFields();
           }
@@ -1116,9 +1115,14 @@ class _FrameExampleState extends State<FrameExample>
             _selectedLayer = null;
           });
 
-          // Allow UI to update before capturing
-          await Future.delayed(const Duration(milliseconds: 50));
-
+          // Deselect any selected layer - using the correct approach
+          if (editorKey.currentState != null) {
+            // Set the selected layer ID to an empty string to deselect it
+            editorKey.currentState!.layerInteractionManager.selectedLayerId =
+                '';
+          }
+        },
+        onImageEditingComplete: (bytes) async {
           // Call the original callback
           await onImageEditingComplete(bytes);
 
