@@ -83,7 +83,17 @@ class FrameTemplateManager {
   double _initialScale = 1.0;
   double _initialRotation = 0.0;
 
-  FrameTemplateManager({required this.templates});
+  // Callback for when a text field is selected
+  final Function(TextFieldConfig)? onTextFieldSelected;
+
+  // Callback for when all text fields are deselected
+  final Function()? onAllTextFieldsDeselected;
+
+  FrameTemplateManager({
+    required this.templates,
+    this.onTextFieldSelected,
+    this.onAllTextFieldsDeselected,
+  });
 
   FrameTemplate get currentTemplate => templates[_currentTemplateIndex];
 
@@ -114,6 +124,28 @@ class FrameTemplateManager {
         textField.dispose();
       }
     }
+  }
+
+  // Method to deselect all text fields
+  void deselectAllTextFields() {
+    for (var textField in currentTemplate.textFields) {
+      textField.isSelected.value = false;
+    }
+    onAllTextFieldsDeselected?.call();
+  }
+
+  // Method to select a specific text field
+  void selectTextField(TextFieldConfig textField) {
+    // First deselect all text fields
+    for (var field in currentTemplate.textFields) {
+      field.isSelected.value = false;
+    }
+
+    // Then select this text field
+    textField.isSelected.value = true;
+
+    // Notify the parent
+    onTextFieldSelected?.call(textField);
   }
 
   void showTextEditDialog(BuildContext context, TextFieldConfig textConfig) {
@@ -334,34 +366,17 @@ class FrameTemplateManager {
                                                           print(
                                                               "Text field tapped: ${textConfig.controller.text}");
 
-                                                          // First deselect all text fields
-                                                          for (var field
-                                                              in currentTemplate
-                                                                  .textFields) {
-                                                            field.isSelected
-                                                                .value = false;
-                                                          }
-
-                                                          // Then select this text field
-                                                          textConfig.isSelected
-                                                              .value = true;
-
-                                                          // Make sure controls are visible
-                                                          controlsVisibleNotifier
-                                                              .value = true;
+                                                          // Use the manager's method to select this text field
+                                                          selectTextField(
+                                                              textConfig);
                                                         },
                                                   onScaleStart: isCapturing
                                                       ? null // Disable interactions when capturing
                                                       : (details) {
                                                           // Select this text field when scaling starts
-                                                          for (var field
-                                                              in currentTemplate
-                                                                  .textFields) {
-                                                            field.isSelected
-                                                                    .value =
-                                                                (field ==
-                                                                    textConfig);
-                                                          }
+                                                          selectTextField(
+                                                              textConfig);
+
                                                           // Store initial scale and rotation for relative changes
                                                           _initialScale =
                                                               textConfig
@@ -416,6 +431,17 @@ class FrameTemplateManager {
                                                     angle: rotation,
                                                     child: Container(
                                                       width: scaledWidth,
+                                                      constraints:
+                                                          BoxConstraints(
+                                                        maxWidth: scaledWidth,
+                                                        minWidth: textConfig
+                                                                .controller
+                                                                .text
+                                                                .isEmpty
+                                                            ? 100.0 // Default minimum width
+                                                            : scaledWidth *
+                                                                0.5, // Use a percentage of the scaled width
+                                                      ),
                                                       decoration: BoxDecoration(
                                                         // Visual feedback for selection - only when not capturing
                                                         border: isCapturing
@@ -715,6 +741,13 @@ class _FrameExampleState extends State<FrameExample>
           ],
         ),
       ],
+      // Only include callbacks that don't affect frame opacity
+      onTextFieldSelected: (textField) {
+        // No frame opacity changes here
+      },
+      onAllTextFieldsDeselected: () {
+        // No frame opacity changes here
+      },
     );
 
     // Set initial frame URL from template manager
@@ -1104,7 +1137,7 @@ class _FrameExampleState extends State<FrameExample>
 
           // First deselect all text fields when saving the image
           if (_useTemplateFrame) {
-            _deselectAllTextFields();
+            _templateManager.deselectAllTextFields();
           }
 
           // Hide controls when saving the image
@@ -1115,9 +1148,8 @@ class _FrameExampleState extends State<FrameExample>
             _selectedLayer = null;
           });
 
-          // Deselect any selected layer - using the correct approach
+          // Deselect any selected layer
           if (editorKey.currentState != null) {
-            // Set the selected layer ID to an empty string to deselect it
             editorKey.currentState!.layerInteractionManager.selectedLayerId =
                 '';
           }
@@ -1201,7 +1233,7 @@ class _FrameExampleState extends State<FrameExample>
 
             // Deselect all text fields when tapping outside
             if (_useTemplateFrame) {
-              _deselectAllTextFields();
+              _templateManager.deselectAllTextFields();
             }
           },
 
@@ -1414,40 +1446,26 @@ class _FrameExampleState extends State<FrameExample>
 
   // Return a ReactiveWidget based on the current frame mode
   ReactiveWidget _buildCurrentFrame(Size bodySize, Stream<void> rebuildStream) {
-    return _useTemplateFrame
-        ? _templateManager.buildTemplateFrame(
-            bodySize,
-            rebuildStream,
-            _controlsVisibleNotifier,
-            context,
-            _isCapturingResult,
-          )
-        : _buildRegularFrame(bodySize, rebuildStream);
-  }
-
-  // Regular frame without text
-  ReactiveWidget _buildRegularFrame(Size bodySize, Stream<void> rebuildStream) {
-    return ReactiveWidget(
-      stream: rebuildStream,
-      builder: (_) => ValueListenableBuilder<bool>(
-        valueListenable: _controlsVisibleNotifier,
-        builder: (context, isVisible, _) {
-          return Opacity(
-            opacity: isVisible
-                ? 0.6
-                : 1.0, // Reduce opacity when controls are visible
-            child: IgnorePointer(
-              child: Image.asset(
-                _frameUrl,
-                width: bodySize.width,
-                height: bodySize.height,
-                fit: BoxFit.contain,
-              ),
-            ),
-          );
-        },
-      ),
-    );
+    if (_useTemplateFrame) {
+      return _templateManager.buildTemplateFrame(
+        bodySize,
+        rebuildStream,
+        _controlsVisibleNotifier,
+        context,
+        _isCapturingResult,
+      );
+    } else {
+      // Simple frame without text
+      return ReactiveWidget(
+        stream: rebuildStream,
+        builder: (_) => Image.asset(
+          _frameUrl,
+          width: bodySize.width,
+          height: bodySize.height,
+          fit: BoxFit.contain,
+        ),
+      );
+    }
   }
 
   Widget _buildBottomBar(
@@ -1869,14 +1887,6 @@ class _FrameExampleState extends State<FrameExample>
         editorKey.currentState!.layerInteractionManager.selectedLayerId != null;
     if (hasSelectedLayer) {
       _controlsVisibleNotifier.value = true;
-    }
-  }
-
-  void _deselectAllTextFields() {
-    if (_useTemplateFrame) {
-      for (var textField in _templateManager.currentTemplate.textFields) {
-        textField.isSelected.value = false;
-      }
     }
   }
 }

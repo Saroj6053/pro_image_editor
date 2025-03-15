@@ -66,7 +66,17 @@ class FrameTemplateManager {
   double _initialScale = 1.0;
   double _initialRotation = 0.0;
 
-  FrameTemplateManager({required this.templates});
+  // Callback for when a text field is selected
+  final Function(TextFieldConfig)? onTextFieldSelected;
+
+  // Callback for when all text fields are deselected
+  final Function()? onAllTextFieldsDeselected;
+
+  FrameTemplateManager({
+    required this.templates,
+    this.onTextFieldSelected,
+    this.onAllTextFieldsDeselected,
+  });
 
   FrameTemplate get currentTemplate => templates[_currentTemplateIndex];
 
@@ -91,18 +101,34 @@ class FrameTemplateManager {
     }
   }
 
-  void deselectAllTextFields() {
-    for (var textField in currentTemplate.textFields) {
-      textField.isSelected.value = false;
-    }
-  }
-
   void dispose() {
     for (var template in templates) {
       for (var textField in template.textFields) {
         textField.dispose();
       }
     }
+  }
+
+  // Method to deselect all text fields
+  void deselectAllTextFields() {
+    for (var textField in currentTemplate.textFields) {
+      textField.isSelected.value = false;
+    }
+    onAllTextFieldsDeselected?.call();
+  }
+
+  // Method to select a specific text field
+  void selectTextField(TextFieldConfig textField) {
+    // First deselect all text fields
+    for (var field in currentTemplate.textFields) {
+      field.isSelected.value = false;
+    }
+
+    // Then select this text field
+    textField.isSelected.value = true;
+
+    // Notify the parent
+    onTextFieldSelected?.call(textField);
   }
 
   void showTextEditDialog(BuildContext context, TextFieldConfig textConfig) {
@@ -226,329 +252,265 @@ class FrameTemplateManager {
     Stream<void> rebuildStream,
     ValueNotifier<bool> controlsVisibleNotifier,
     BuildContext context,
+    ValueNotifier<bool> isCapturingResult,
   ) {
     return ReactiveWidget(
       stream: rebuildStream,
       builder: (_) => ValueListenableBuilder<bool>(
         valueListenable: controlsVisibleNotifier,
         builder: (context, isVisible, _) {
-          return Stack(
-            children: [
-              // Frame image as the base layer with opacity control
-              Opacity(
-                opacity: isVisible
-                    ? 0.6
-                    : 1.0, // Reduce opacity when controls are visible
-                child: IgnorePointer(
-                  child: Image.asset(
-                    currentFrameAsset,
-                    width: bodySize.width,
-                    height: bodySize.height,
-                    fit: BoxFit.contain,
+          return ValueListenableBuilder<bool>(
+            valueListenable: isCapturingResult,
+            builder: (context, isCapturing, _) {
+              return Stack(
+                children: [
+                  // Frame image as the base layer with opacity control
+                  Opacity(
+                    opacity: isVisible && !isCapturing
+                        ? 0.6
+                        : 1.0, // Reduce opacity when controls are visible but not when capturing
+                    child: IgnorePointer(
+                      child: Image.asset(
+                        currentFrameAsset,
+                        width: bodySize.width,
+                        height: bodySize.height,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
                   ),
-                ),
-              ),
 
-              // Instructions overlay - moved to the right side
-              Positioned(
-                top: 10,
-                right: 10, // Changed from left: 0, right: 0 to right: 10
-                child: Container(
-                  padding: const EdgeInsets.all(6), // Reduced padding
-                  width: 150, // Fixed width for smaller space
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    '• Tap to select text\n• Drag to move\n• Pinch to resize\n• Rotate with handle\n• Double-tap to edit',
-                    style: TextStyle(
-                        color: Colors.white, fontSize: 10), // Smaller font
-                    textAlign:
-                        TextAlign.left, // Left aligned for better readability
-                  ),
-                ),
-              ),
+                  // Instructions overlay - only show when not capturing
+                  if (!isCapturing)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        width: 150,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          '• Tap to select text\n• Drag to move\n• Pinch to resize\n• Rotate with handle\n• Double-tap to edit',
+                          style: TextStyle(color: Colors.white, fontSize: 10),
+                          textAlign: TextAlign.left,
+                        ),
+                      ),
+                    ),
 
-              // Text fields from the current template
-              ...currentTemplate.textFields
-                  .map((textConfig) => ValueListenableBuilder<Offset>(
-                        valueListenable: textConfig.positionOffset,
-                        builder: (context, offset, _) {
-                          return ValueListenableBuilder<double>(
-                            valueListenable: textConfig.scale,
-                            builder: (context, scale, _) {
+                  // Text fields from the current template
+                  ...currentTemplate.textFields
+                      .map((textConfig) => ValueListenableBuilder<Offset>(
+                            valueListenable: textConfig.positionOffset,
+                            builder: (context, offset, _) {
                               return ValueListenableBuilder<double>(
-                                valueListenable: textConfig.rotation,
-                                builder: (context, rotation, _) {
-                                  return ValueListenableBuilder<bool>(
-                                    valueListenable: textConfig.isSelected,
-                                    builder: (context, isSelected, _) {
-                                      // Calculate base position from percentage values
-                                      final baseTop = bodySize.height *
-                                          textConfig.topPosition;
-                                      final baseLeft = bodySize.width *
-                                          textConfig.leftPosition;
+                                valueListenable: textConfig.scale,
+                                builder: (context, scale, _) {
+                                  return ValueListenableBuilder<double>(
+                                    valueListenable: textConfig.rotation,
+                                    builder: (context, rotation, _) {
+                                      return ValueListenableBuilder<bool>(
+                                        valueListenable: textConfig.isSelected,
+                                        builder: (context, isSelected, _) {
+                                          // Calculate base position from percentage values
+                                          final baseTop = bodySize.height *
+                                              textConfig.topPosition;
+                                          final baseLeft = bodySize.width *
+                                              textConfig.leftPosition;
 
-                                      // Apply the offset from dragging
-                                      final top = baseTop + offset.dy;
-                                      final left = baseLeft + offset.dx;
+                                          // Apply the offset from dragging
+                                          final top = baseTop + offset.dy;
+                                          final left = baseLeft + offset.dx;
 
-                                      // Calculate width based on padding
-                                      final width = bodySize.width -
-                                          (bodySize.width *
-                                              textConfig.padding.left) -
-                                          (bodySize.width *
-                                              textConfig.padding.right);
+                                          // Calculate width based on padding
+                                          final width = bodySize.width -
+                                              (bodySize.width *
+                                                  textConfig.padding.left) -
+                                              (bodySize.width *
+                                                  textConfig.padding.right);
 
-                                      // Calculate the actual width after scaling
-                                      final scaledWidth = width * scale;
+                                          // Calculate the actual width after scaling
+                                          final scaledWidth = width * scale;
 
-                                      return Positioned(
-                                        top: top,
-                                        left: left -
-                                            (scaledWidth /
-                                                2), // Center horizontally
-                                        child: Stack(
-                                          clipBehavior: Clip.none,
-                                          children: [
-                                            // Main text field
-                                            GestureDetector(
-                                              onTap: () {
-                                                print(
-                                                    "Text field tapped: ${textConfig.controller.text}");
+                                          return Positioned(
+                                            top: top,
+                                            left: left -
+                                                (scaledWidth /
+                                                    2), // Center horizontally
+                                            child: Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                // Main text field
+                                                GestureDetector(
+                                                  onTap: isCapturing
+                                                      ? null // Disable interactions when capturing
+                                                      : () {
+                                                          print(
+                                                              "Text field tapped: ${textConfig.controller.text}");
 
-                                                // First deselect all text fields
-                                                for (var field
-                                                    in currentTemplate
-                                                        .textFields) {
-                                                  field.isSelected.value =
-                                                      false;
-                                                }
+                                                          // Use the manager's method to select this text field
+                                                          selectTextField(
+                                                              textConfig);
+                                                        },
+                                                  onScaleStart: isCapturing
+                                                      ? null // Disable interactions when capturing
+                                                      : (details) {
+                                                          // Select this text field when scaling starts
+                                                          selectTextField(
+                                                              textConfig);
 
-                                                // Then select this text field
-                                                textConfig.isSelected.value =
-                                                    true;
+                                                          // Store initial scale and rotation for relative changes
+                                                          _initialScale =
+                                                              textConfig
+                                                                  .scale.value;
+                                                          _initialRotation =
+                                                              textConfig
+                                                                  .rotation
+                                                                  .value;
+                                                        },
+                                                  onScaleUpdate: isCapturing
+                                                      ? null // Disable interactions when capturing
+                                                      : (details) {
+                                                          // Handle both panning and scaling in the scale update
 
-                                                // Make sure controls are visible
-                                                controlsVisibleNotifier.value =
-                                                    true;
-                                              },
-                                              onScaleStart: (details) {
-                                                // Select this text field when scaling starts
-                                                for (var field
-                                                    in currentTemplate
-                                                        .textFields) {
-                                                  field.isSelected.value =
-                                                      (field == textConfig);
-                                                }
-                                                // Store initial scale and rotation for relative changes
-                                                _initialScale =
-                                                    textConfig.scale.value;
-                                                _initialRotation =
-                                                    textConfig.rotation.value;
-                                              },
-                                              onScaleUpdate: (details) {
-                                                // Handle both panning and scaling in the scale update
+                                                          // If it's a pure pan operation (scale = 1.0, no rotation)
+                                                          if (details.scale ==
+                                                                  1.0 &&
+                                                              details.rotation ==
+                                                                  0.0) {
+                                                            // Update position offset based on drag
+                                                            textConfig
+                                                                    .positionOffset
+                                                                    .value +=
+                                                                details
+                                                                    .focalPointDelta;
+                                                          } else {
+                                                            // Update scale (with limits)
+                                                            final newScale =
+                                                                (_initialScale *
+                                                                        details
+                                                                            .scale)
+                                                                    .clamp(0.5,
+                                                                        3.0); // Limit scale between 0.5x and 3x
+                                                            textConfig.scale
+                                                                    .value =
+                                                                newScale;
 
-                                                // If it's a pure pan operation (scale = 1.0, no rotation)
-                                                if (details.scale == 1.0 &&
-                                                    details.rotation == 0.0) {
-                                                  // Update position offset based on drag
-                                                  textConfig.positionOffset
-                                                          .value +=
-                                                      details.focalPointDelta;
-                                                } else {
-                                                  // Update scale (with limits)
-                                                  final newScale = (_initialScale *
-                                                          details.scale)
-                                                      .clamp(0.5,
-                                                          3.0); // Limit scale between 0.5x and 3x
-                                                  textConfig.scale.value =
-                                                      newScale;
-
-                                                  // Update rotation if rotation is enabled
-                                                  if (details.rotation != 0.0) {
-                                                    textConfig.rotation.value =
-                                                        _initialRotation +
-                                                            details.rotation;
-                                                  }
-                                                }
-                                              },
-                                              child: Transform.rotate(
-                                                angle: rotation,
-                                                child: Container(
-                                                  width: scaledWidth,
-                                                  decoration: BoxDecoration(
-                                                    // Visual feedback for selection
-                                                    border: Border.all(
-                                                      color: isSelected
-                                                          ? Colors.blue
-                                                              .withOpacity(0.8)
-                                                          : Colors.white
-                                                              .withOpacity(0.3),
-                                                      width: isSelected ? 2 : 1,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                    color: isSelected
-                                                        ? Colors.black
-                                                            .withOpacity(0.3)
-                                                        : Colors.transparent,
-                                                  ),
-                                                  child: Material(
-                                                    color: Colors.transparent,
-                                                    child: InkWell(
-                                                      onTap:
-                                                          null, // Disable tap to prevent conflict with GestureDetector
-                                                      onDoubleTap: () {
-                                                        showTextEditDialog(
-                                                            context,
-                                                            textConfig);
-                                                      },
-                                                      child: Padding(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .all(8.0),
-                                                        child: Text(
-                                                          textConfig
-                                                              .controller.text,
-                                                          textAlign:
-                                                              TextAlign.center,
-                                                          style: textConfig
-                                                              .style
-                                                              .copyWith(
-                                                            fontSize: textConfig
-                                                                    .style
-                                                                    .fontSize! *
-                                                                scale,
+                                                            // Update rotation if rotation is enabled
+                                                            if (details
+                                                                    .rotation !=
+                                                                0.0) {
+                                                              textConfig
+                                                                      .rotation
+                                                                      .value =
+                                                                  _initialRotation +
+                                                                      details
+                                                                          .rotation;
+                                                            }
+                                                          }
+                                                        },
+                                                  child: Transform.rotate(
+                                                    angle: rotation,
+                                                    child: Container(
+                                                      width: scaledWidth,
+                                                      constraints:
+                                                          BoxConstraints(
+                                                        maxWidth: scaledWidth,
+                                                        minWidth: textConfig
+                                                                .controller
+                                                                .text
+                                                                .isEmpty
+                                                            ? 100.0 // Default minimum width
+                                                            : scaledWidth *
+                                                                0.5, // Use a percentage of the scaled width
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        // Visual feedback for selection - only when not capturing
+                                                        border: isCapturing
+                                                            ? null // No border when capturing
+                                                            : Border.all(
+                                                                color: isSelected
+                                                                    ? Colors
+                                                                        .blue
+                                                                        .withOpacity(
+                                                                            0.8)
+                                                                    : Colors
+                                                                        .white
+                                                                        .withOpacity(
+                                                                            0.3),
+                                                                width:
+                                                                    isSelected
+                                                                        ? 2
+                                                                        : 1,
+                                                              ),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(8),
+                                                        color: isCapturing
+                                                            ? Colors
+                                                                .transparent // Transparent when capturing
+                                                            : isSelected
+                                                                ? Colors.black
+                                                                    .withOpacity(
+                                                                        0.3)
+                                                                : Colors
+                                                                    .transparent,
+                                                      ),
+                                                      child: Material(
+                                                        color:
+                                                            Colors.transparent,
+                                                        child: InkWell(
+                                                          onTap:
+                                                              null, // Disable tap to prevent conflict with GestureDetector
+                                                          onDoubleTap: isCapturing
+                                                              ? null // Disable when capturing
+                                                              : () {
+                                                                  showTextEditDialog(
+                                                                      context,
+                                                                      textConfig);
+                                                                },
+                                                          child: Padding(
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .all(8.0),
+                                                            child: Text(
+                                                              textConfig
+                                                                  .controller
+                                                                  .text,
+                                                              textAlign:
+                                                                  TextAlign
+                                                                      .center,
+                                                              style: textConfig
+                                                                  .style
+                                                                  .copyWith(
+                                                                fontSize: textConfig
+                                                                        .style
+                                                                        .fontSize! *
+                                                                    scale,
+                                                              ),
+                                                            ),
                                                           ),
                                                         ),
                                                       ),
                                                     ),
                                                   ),
                                                 ),
-                                              ),
+                                              ],
                                             ),
-
-                                            // Control handles (only visible when selected)
-                                            if (isSelected) ...[
-                                              // Rotation handle
-                                              Positioned(
-                                                bottom: -30,
-                                                left: scaledWidth / 2 - 15,
-                                                child: Transform.rotate(
-                                                  angle: rotation,
-                                                  child: GestureDetector(
-                                                    onScaleStart: (details) {
-                                                      // Store the initial rotation
-                                                      _initialRotation =
-                                                          textConfig
-                                                              .rotation.value;
-                                                    },
-                                                    onScaleUpdate: (details) {
-                                                      // Calculate rotation based on drag position relative to center
-                                                      final centerX =
-                                                          scaledWidth / 2;
-                                                      final centerY =
-                                                          0; // Top of the text field
-
-                                                      // Calculate angle between center and current position
-                                                      final dx = details
-                                                              .focalPoint.dx -
-                                                          centerX;
-                                                      final dy = details
-                                                              .focalPoint.dy -
-                                                          centerY;
-                                                      final angle =
-                                                          atan2(dx, -dy);
-
-                                                      // Update rotation
-                                                      textConfig.rotation
-                                                          .value = angle;
-                                                    },
-                                                    child: Container(
-                                                      width: 30,
-                                                      height: 30,
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.blue
-                                                            .withOpacity(0.8),
-                                                        shape: BoxShape.circle,
-                                                        border: Border.all(
-                                                          color: Colors.white,
-                                                          width: 2,
-                                                        ),
-                                                      ),
-                                                      child: const Icon(
-                                                        Icons.rotate_right,
-                                                        color: Colors.white,
-                                                        size: 20,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-
-                                              // Scale handle (bottom right)
-                                              Positioned(
-                                                right: -15,
-                                                bottom: -15,
-                                                child: Transform.rotate(
-                                                  angle: rotation,
-                                                  child: GestureDetector(
-                                                    onScaleStart: (details) {
-                                                      // Store the initial scale
-                                                      _initialScale = textConfig
-                                                          .scale.value;
-                                                    },
-                                                    onScaleUpdate: (details) {
-                                                      // Calculate new scale based on focal point movement
-                                                      final dx = details
-                                                          .focalPointDelta.dx;
-                                                      final newScale =
-                                                          textConfig
-                                                                  .scale.value +
-                                                              (dx / 100);
-                                                      textConfig.scale.value =
-                                                          newScale.clamp(
-                                                              0.5, 3.0);
-                                                    },
-                                                    child: Container(
-                                                      width: 30,
-                                                      height: 30,
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.green
-                                                            .withOpacity(0.8),
-                                                        shape: BoxShape.circle,
-                                                        border: Border.all(
-                                                          color: Colors.white,
-                                                          width: 2,
-                                                        ),
-                                                      ),
-                                                      child: const Icon(
-                                                        Icons.open_in_full,
-                                                        color: Colors.white,
-                                                        size: 16,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
+                                          );
+                                        },
                                       );
                                     },
                                   );
                                 },
                               );
                             },
-                          );
-                        },
-                      ))
-                  .toList(),
-            ],
+                          ))
+                      .toList(),
+                ],
+              );
+            },
           );
         },
       ),
