@@ -72,6 +72,140 @@ class FrameTemplateManager {
   // Callback for when all text fields are deselected
   final Function()? onAllTextFieldsDeselected;
 
+  // Factory constructor to create with default templates
+  factory FrameTemplateManager.withDefaultTemplates({
+    Function(TextFieldConfig)? onTextFieldSelected,
+    Function()? onAllTextFieldsDeselected,
+  }) {
+    return FrameTemplateManager(
+      templates: [
+        // Birthday template
+        FrameTemplate(
+          name: 'Birthday',
+          frameAsset: 'assets/frame.png',
+          textFields: [
+            TextFieldConfig(
+              initialText: 'Happy Birthday',
+              style: TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.3,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+            TextFieldConfig(
+              initialText: 'Avik',
+              style: TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                shadows: [
+                  Shadow(
+                    offset: Offset(2.0, 2.0),
+                    blurRadius: 3.0,
+                    color: Colors.black.withOpacity(0.5),
+                  ),
+                ],
+              ),
+              topPosition: 0.45,
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+          ],
+        ),
+
+        // Anniversary template
+        FrameTemplate(
+          name: 'Anniversary',
+          frameAsset: 'assets/frame1.png',
+          textFields: [
+            // Existing text fields...
+          ],
+        ),
+
+        // Greeting template
+        FrameTemplate(
+          name: 'Greeting',
+          frameAsset: 'assets/frame.png',
+          textFields: [
+            // Existing text fields...
+          ],
+        ),
+
+        // New Basic Circular template
+        FrameTemplate(
+          name: 'Basic Circular',
+          frameAsset: 'assets/frame_basic.png',
+          textFields: [
+            // "YOU ARE INVITED TO CELEBRATE..." text field
+            TextFieldConfig(
+              initialText: 'YOU ARE INVITED TO CELEBRATE...',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF5ECCC4), // Teal color as shown in image
+                letterSpacing: 1.2,
+              ),
+              topPosition: 0.45, // Position it in the middle section
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+
+            // "Caroline's" text field (name)
+            TextFieldConfig(
+              initialText: 'Caroline\'s',
+              style: TextStyle(
+                fontSize: 42,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Script', // Use a script font if available
+                color: Color(0xFF5ECCC4), // Teal color
+                letterSpacing: 0.5,
+              ),
+              topPosition: 0.53, // Position it below the first text
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+
+            // "5TH BIRTHDAY" text field
+            TextFieldConfig(
+              initialText: '5TH BIRTHDAY',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF5ECCC4), // Teal color
+                letterSpacing: 2.0,
+              ),
+              topPosition: 0.62, // Position it below the name
+              padding: EdgeInsets.symmetric(horizontal: 0.1),
+            ),
+
+            // Event details text field
+            TextFieldConfig(
+              initialText:
+                  'SATURDAY, AUGUST 8, 11 AM - 1 PM\nSHADY GROVE PARK, SHELTER B\nRSVP TO SHARON 555-7890',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF5ECCC4), // Teal color
+                height: 1.5, // Line spacing
+                letterSpacing: 0.8,
+              ),
+              topPosition: 0.75, // Position it at the bottom section
+              padding: EdgeInsets.symmetric(horizontal: 0.15),
+            ),
+          ],
+        ),
+      ],
+      onTextFieldSelected: onTextFieldSelected,
+      onAllTextFieldsDeselected: onAllTextFieldsDeselected,
+    );
+  }
+
   FrameTemplateManager({
     required this.templates,
     this.onTextFieldSelected,
